@@ -1,3 +1,4 @@
+use std::cmp;
 use std::ops::Add;
 use std::fmt::Display;
 use crossterm::terminal::{Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen, enable_raw_mode, disable_raw_mode};
@@ -8,7 +9,6 @@ use std::io::Write;
 use crossterm::cursor::MoveTo;
 use crossterm::style::Print;
 
-pub(crate) struct Terminal {}
 
 #[derive(Debug, Eq, PartialEq, Copy, Clone, Default)]
 pub struct Location {
@@ -20,6 +20,77 @@ pub struct Location {
 pub struct Size {
     pub width: usize,
     pub height: usize,
+}
+
+impl PartialOrd for Size {
+    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
+        if self.width < other.width && self.height < other.height {
+            Some(cmp::Ordering::Less)
+        } else if self.width > other.width && self.height > other.height {
+            Some(cmp::Ordering::Greater)
+        } else if self.width == other.width && self.height == other.height {
+            Some(cmp::Ordering::Equal)
+        } else {
+            None
+        }
+    }
+}
+
+pub struct Terminal {}
+
+impl Terminal {
+    fn queue_command(&mut self, com: impl Command) -> io::Result<()> {
+        queue!(io::stdout(), com)
+    }
+
+    fn enter_alternate_screen(&mut self) -> io::Result<()> {
+        self.queue_command(EnterAlternateScreen)
+    }
+
+    fn exit_alternate_screen(&mut self) -> io::Result<()> {
+        self.queue_command(LeaveAlternateScreen)
+    }
+
+    pub fn new() -> Terminal {
+        Terminal {}
+    }
+
+    pub fn flush(&mut self) -> io::Result<()> {
+        io::stdout().flush()
+    }
+
+    pub fn initialize(&mut self) -> io::Result<()> {
+        self.enter_alternate_screen()?;
+        enable_raw_mode()?;
+        Ok(())
+    }
+
+    pub fn destruct(&mut self) -> io::Result<()> {
+        self.flush()?;
+        disable_raw_mode()?;
+        self.exit_alternate_screen()?;
+        Ok(())
+    }
+
+    pub fn clear_screen(&mut self) -> io::Result<()> {
+        self.queue_command(Clear(ClearType::All))
+    }
+
+    pub fn print(&mut self, s: impl Display) -> io::Result<()> {
+        self.queue_command(Print(s))
+    }
+
+    pub fn move_cursor_to(&mut self, loc: Location) -> io::Result<()> {
+        let loc = loc.as_u16();
+        self.queue_command(MoveTo(loc.0, loc.1))
+    }
+
+    /// 读取终端事件.
+    ///
+    /// 见 `crossterm::event::read` 函数.
+    pub fn read_event_blocking(&self) -> io::Result<event::Event> {
+        event::read()
+    }
 }
 
 macro_rules! usize_pair {
@@ -82,58 +153,3 @@ macro_rules! usize_pair {
 
 usize_pair!(Location, x, y);
 usize_pair!(Size, width, height);
-
-impl Terminal {
-    fn queue_command(&self, com: impl Command) -> io::Result<()> {
-        queue!(io::stdout(), com)
-    }
-
-    fn enter_alternate_screen(&self) -> io::Result<()> {
-        self.queue_command(EnterAlternateScreen)
-    }
-
-    fn exit_alternate_screen(&self) -> io::Result<()> {
-        self.queue_command(LeaveAlternateScreen)
-    }
-
-    pub fn new() -> Terminal {
-        Terminal {}
-    }
-
-    pub fn flush(&self) -> io::Result<()> {
-        io::stdout().flush()
-    }
-
-    pub fn initialize(&self) -> io::Result<()> {
-        self.enter_alternate_screen()?;
-        enable_raw_mode()?;
-        Ok(())
-    }
-
-    pub fn destruct(&self) -> io::Result<()> {
-        self.flush()?;
-        disable_raw_mode()?;
-        self.exit_alternate_screen()?;
-        Ok(())
-    }
-
-    pub fn clear_screen(&self) -> io::Result<()> {
-        self.queue_command(Clear(ClearType::All))
-    }
-
-    pub fn print(&self, s: impl Display) -> io::Result<()> {
-        self.queue_command(Print(s))
-    }
-
-    pub fn move_cursor_to(&self, loc: Location) -> io::Result<()> {
-        let loc = loc.as_u16();
-        self.queue_command(MoveTo(loc.0, loc.1))
-    }
-
-    /// 读取终端事件.
-    ///
-    /// 见 `crossterm::event::read` 函数.
-    pub fn read_event_blocking() -> io::Result<event::Event> {
-        event::read()
-    }
-}

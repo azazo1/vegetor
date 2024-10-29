@@ -80,8 +80,8 @@ impl Editor {
                         if self.state == State::Welcoming {
                             self.state = State::Editing; // 有按键按下就进入 Editing, 其余不做任何动作.
                             self.edit_area.set_need_printing();
-                        } else if let Ok(carpet_move) = code.try_into() {
-                            self.edit_area.move_carpet(carpet_move)?;
+                        } else if let Ok(caret_move) = code.try_into() {
+                            self.edit_area.move_caret(caret_move)?;
                         }
                         // todo
                     }

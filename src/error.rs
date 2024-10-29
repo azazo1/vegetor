@@ -9,16 +9,16 @@ pub enum Error {
     // buffer.
     #[error("The print area size doesn't fit the buffer.")]
     PrintAreaSizeNotFit,
-    #[error("Carpet out of buffer height, carpet y: {carpet}, buffer height: {height}.")]
-    CarpetOutOfHeight { carpet: usize, height: usize },
-    #[error("Carpet out of text len, carpet x: {carpet}, current line length: {len}.")]
-    CarpetOutOfLen { carpet: usize, len: usize },
+    #[error("Caret out of buffer height, caret y: {caret}, buffer height: {height}.")]
+    CaretOutOfHeight { caret: usize, height: usize },
+    #[error("Caret out of text len, caret x: {caret}, current line length: {len}.")]
+    CaretOutOfLen { caret: usize, len: usize },
 
     // edit area.
     #[error("Buffer size {buffer_size:?} exceeds the display area size {area_size:?}.")]
     BufferSizeExceeds { buffer_size: Size, area_size: Size },
-    #[error("Carpet out of range.")]
-    CarpetOutOfRange,
+    #[error("Caret out of range.")]
+    CaretOutOfRange,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

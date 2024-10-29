@@ -7,31 +7,31 @@ use crate::editor::terminal::{Size, Location};
 #[derive(Debug)]
 /// 储存文本内容.
 pub struct Buffer {
-    /// 当前写入 Buffer 的位置, 在 carpet 索引的字符前进行输入, 不是终端的 cursor.
-    carpet: Location,
+    /// 当前写入 Buffer 的位置, 在 caret 索引的字符前进行输入, 不是终端的 cursor.
+    caret: Location,
     lines: Vec<String>,
 }
 
 impl Buffer {
     pub fn new() -> Buffer {
         Buffer {
-            carpet: Location::default(),
+            caret: Location::default(),
             lines: Vec::new(),
         }
     }
 
-    /// 从文件中加载 Buffer, 加载完毕之后 carpet 在末尾.
+    /// 从文件中加载 Buffer, 加载完毕之后 caret 在末尾.
     pub fn load(&mut self, file: impl AsRef<Path>) -> error::Result<()> {
         self.clear();
         let s = fs::read_to_string(file)?;
         self.lines = s.split('\n').map(|x| x.trim_matches(|c| c == '\r' || c == '\n').to_string()).collect();
         let line_cnt = self.lines.len();
         if line_cnt == 0 {
-            self.carpet.x = 0;
-            self.carpet.y = 0;
+            self.caret.x = 0;
+            self.caret.y = 0;
         } else {
-            self.carpet.x = self.lines.get(line_cnt - 1).unwrap().chars_count();
-            self.carpet.y = line_cnt - 1;
+            self.caret.x = self.lines.get(line_cnt - 1).unwrap().chars_count();
+            self.caret.y = line_cnt - 1;
         }
         Ok(())
     }
@@ -46,14 +46,14 @@ impl Buffer {
         self.lines.get_mut(idx)
     }
 
-    /// 获取当前 carpet 所在的行.
+    /// 获取当前 caret 所在的行.
     pub fn get_current_line(&self) -> Option<&String> {
-        self.get(self.carpet.y)
+        self.get(self.caret.y)
     }
 
-    /// 获取当前 carpet 所在的行, 以用于修改.
+    /// 获取当前 caret 所在的行, 以用于修改.
     pub fn get_current_line_mut(&mut self) -> Option<&mut String> {
-        self.get_mut(self.carpet.y)
+        self.get_mut(self.caret.y)
     }
 
     /// 获取当前行, 如果当前行不存在则创建当前行及之前的空行, 并返回当前行.
@@ -81,21 +81,21 @@ impl Buffer {
         }
     }
 
-    /// 检查 carpet 位置是否合理.
-    /// - 竖直方向上: 检查 carpet 是否在有效输入行内.
+    /// 检查 caret 位置是否合理.
+    /// - 竖直方向上: 检查 caret 是否在有效输入行内.
     /// - 水平方向上: 检查是否超出当前行文字范围.
     ///
     /// # Errors
-    /// - [`Error::CarpetOutOfHeight`]: carpet 在竖直方向上超出.
-    /// - [`Error::CarpetOutOfLen`]: carpet 在水平方向上超出.
-    fn check_carpet(&self) -> error::Result<()> {
-        if self.carpet.y > self.len() { // 允许等于, 因为超出文字一行可以用来输入新的行.
-            return Err(error::Error::CarpetOutOfHeight { carpet: self.carpet.y, height: self.len() });
+    /// - [`Error::CaretOutOfHeight`]: caret 在竖直方向上超出.
+    /// - [`Error::CaretOutOfLen`]: caret 在水平方向上超出.
+    fn check_caret(&self) -> error::Result<()> {
+        if self.caret.y > self.len() { // 允许等于, 因为超出文字一行可以用来输入新的行.
+            return Err(error::Error::CaretOutOfHeight { caret: self.caret.y, height: self.len() });
         }
         let current_line = self.get_current_line();
         let len = if matches!(current_line, None) { 0 } else { current_line.unwrap().len() };
-        if self.carpet.x > len { // 允许等于, 同上.
-            Err(error::Error::CarpetOutOfLen { carpet: self.carpet.x, len })
+        if self.caret.x > len { // 允许等于, 同上.
+            Err(error::Error::CaretOutOfLen { caret: self.caret.x, len })
         } else {
             Ok(())
         }
@@ -132,20 +132,20 @@ impl Buffer {
         Ok(())
     }
 
-    /// 移动 carpet 到指定位置.
-    pub(crate) fn seek_unchecked(&mut self, carpet_pos: Location) {
-        self.carpet = carpet_pos;
+    /// 移动 caret 到指定位置.
+    pub(crate) fn seek_unchecked(&mut self, caret_pos: Location) {
+        self.caret = caret_pos;
     }
 
     /// 清空内容
     pub fn clear(&mut self) {
-        self.carpet.x = 0;
-        self.carpet.y = 0;
+        self.caret.x = 0;
+        self.caret.y = 0;
         self.lines.clear();
     }
 
-    pub fn carpet(&self) -> Location {
-        self.carpet
+    pub fn caret(&self) -> Location {
+        self.caret
     }
 }
 
@@ -153,15 +153,15 @@ impl fmt::Write for Buffer {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         for c in s.chars() {
             if !c.is_control() && c != '\r' {
-                self.check_carpet().or_else(|_| Err(fmt::Error))?;
-                let carpet_x = self.carpet.x; // 只能在 ensure_current_line 前获取.
-                self.carpet.x += 1;
+                self.check_caret().or_else(|_| Err(fmt::Error))?;
+                let caret_x = self.caret.x; // 只能在 ensure_current_line 前获取.
+                self.caret.x += 1;
                 let line = self.ensure_current_line();
-                line.insert(carpet_x, c);
+                line.insert(caret_x, c);
             } else if c == '\n' {
-                self.carpet.y += 1;
-                self.carpet.x = 0;
-                self.lines.insert(self.carpet.y, String::new());
+                self.caret.y += 1;
+                self.caret.x = 0;
+                self.lines.insert(self.caret.y, String::new());
             }
         }
         Ok(())

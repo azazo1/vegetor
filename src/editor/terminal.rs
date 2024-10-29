@@ -2,6 +2,7 @@ use std::cmp;
 use std::ops::Add;
 use std::fmt::Display;
 use crossterm::terminal::{Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen, enable_raw_mode, disable_raw_mode};
+use crossterm::cursor::{Hide, Show};
 use crossterm::event;
 use crossterm::{Command, queue};
 use std::io;
@@ -36,7 +37,9 @@ impl PartialOrd for Size {
     }
 }
 
-pub struct Terminal {}
+pub struct Terminal {
+    _ign: u8,
+}
 
 impl Terminal {
     fn queue_command(&mut self, com: impl Command) -> io::Result<()> {
@@ -52,7 +55,7 @@ impl Terminal {
     }
 
     pub fn new() -> Terminal {
-        Terminal {}
+        Terminal { _ign: 0 }
     }
 
     pub fn flush(&mut self) -> io::Result<()> {
@@ -80,8 +83,18 @@ impl Terminal {
         self.queue_command(Print(s))
     }
 
+    pub fn hide_cursor(&mut self) -> io::Result<()> {
+        self.queue_command(Hide)
+    }
+
+    pub fn show_cursor(&mut self) -> io::Result<()> {
+        self.queue_command(Show)
+    }
+
     pub fn move_cursor_to(&mut self, loc: Location) -> io::Result<()> {
-        let loc = loc.as_u16();
+        let loc = loc.as_u16_checked().ok_or_else(
+            || Err(io::Error::new(io::ErrorKind::InvalidInput, "location cannot be cast to (u16, u16)"))
+        )?;
         self.queue_command(MoveTo(loc.0, loc.1))
     }
 
@@ -122,6 +135,12 @@ macro_rules! usize_pair {
         impl Into<(u16, u16)> for $t {
             fn into(self) -> (u16, u16) {
                 self.as_u16()
+            }
+        }
+
+        impl Into<(usize, usize)> for $t {
+            fn into(self) -> (usize, usize) {
+                (self.$u1, self.$u2)
             }
         }
 

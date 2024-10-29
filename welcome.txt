@@ -1,0 +1,3 @@
+Welcome to Vegetor,
+a light-weight text editor
+by azazo1.

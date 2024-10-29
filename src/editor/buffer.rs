@@ -1,8 +1,7 @@
-use std::fs;
 use std::fs::read_to_string;
 use std::path::Path;
 use thiserror;
-use std::{fmt, io};
+use std::{fmt, io, fs};
 use unicode_width::UnicodeWidthStr;
 use crate::editor::terminal::{Size, Location, Terminal};
 
@@ -16,30 +15,6 @@ pub enum Error {
     CarpetOutOfHeight { carpet: usize, height: usize },
     #[error("Carpet out of text len, carpet x: {carpet}, current line length: {len}.")]
     CarpetOutOfLen { carpet: usize, len: usize },
-}
-
-#[derive(Debug, Eq, PartialEq, Copy, Clone)]
-pub struct Area {
-    left_top: Location,
-    size: Size,
-}
-
-impl Area {
-    pub fn x(&self) -> usize {
-        self.left_top.x
-    }
-
-    pub fn y(&self) -> usize {
-        self.left_top.y
-    }
-
-    pub fn width(&self) -> usize {
-        self.size.width
-    }
-
-    pub fn height(&self) -> usize {
-        self.size.height
-    }
 }
 
 #[derive(Debug)]
@@ -132,37 +107,21 @@ impl Buffer {
         }
     }
 
-    /// 把自身内容打印到终端.
-    ///
-    /// # Arguments
-    ///
-    /// * `terminal`: 终端对象.
-    /// * `area`: 在终端中的打印区域.
-    ///
-    /// # returns
-    /// * `Result<(), Error>`:
-    ///     - `Ok(())`: 打印成功.
-    ///     - `Err(Error)`: 打印尺寸不符合要求或者 io 错误.
-    pub fn print_to(&self, terminal: &mut Terminal, area: Area) -> Result<(), Error> {
-        // if !(area.size > self.size) { // 这里由于是偏序, 和 <= 不等价, 这里表达的意思是是否 area 有任一部分小于 self.size 中的对应部分.
-        //     return Err(Error::PrintAreaSizeNotFit);
-        // }
-        // todo 这是 view 的功能.
-        // todo 还要在 view 中加个滑动窗口的变量.
-        for row in 0..area.height() {
-            match self.get(row) {
-                Some(line) => {
-                    terminal.move_cursor_to(Location { x: area.x(), y: area.y() + row })?;
-                    terminal.print(&line[0..area.width().min(line.width_cjk())])?; // todo 测试 unicode width 是否准确, 多拿中文测.
-                }
-                None => {}
-            }
-        }
-        Ok(())
-    }
-
     pub fn len(&self) -> usize {
         self.lines.len()
+    }
+
+    /// 获取最长一行的宽度, todo 考虑要不要使用 width_cjk.
+    pub fn max_width(&self) -> usize {
+        match self.lines.iter().max_by_key(|x| x.len()) {
+            Some(l) => l.len(),
+            None => 0
+        }
+    }
+
+    /// 获取 Buffer 的二维占据尺寸, 使用的是 [`Buffer::max_width`] 和 [`Buffer::len`].
+    pub fn size(&self) -> Size {
+        Size::new(self.max_width(), self.len())
     }
 
     /// 把 Buffer 内容保存到文件.
@@ -184,6 +143,17 @@ impl Buffer {
     pub fn seek_uncheck(&mut self, carpet_pos: Location) {
         self.carpet = carpet_pos;
     }
+
+    /// 清空内容
+    pub fn clear(&mut self) {
+        self.carpet.x = 0;
+        self.carpet.y = 0;
+        self.lines.clear();
+    }
+
+    pub fn carpet(&self) -> Location {
+        self.carpet
+    }
 }
 
 impl fmt::Write for Buffer {
@@ -197,6 +167,7 @@ impl fmt::Write for Buffer {
                 line.insert(carpet_x, c);
             } else if c == '\n' {
                 self.carpet.y += 1;
+                self.carpet.x = 0;
                 self.lines.insert(self.carpet.y, String::new());
             }
         }
@@ -214,6 +185,7 @@ impl fmt::Display for Buffer {
 mod test {
     use crate::editor::buffer::Buffer;
     use std::fmt::Write;
+    use std::fs;
     use crate::editor::buffer::Location;
 
     #[test]
@@ -232,5 +204,13 @@ mod test {
         buffer.seek_uncheck(Location { x: 2, y: 1 });
         write!(buffer, "Hello World").unwrap();
         println!("{}", buffer);
+    }
+
+    #[test]
+    fn write_file_to_buffer() {
+        let mut buffer = Buffer::new();
+        let string = fs::read_to_string("Cargo.lock").unwrap();
+        buffer.write_str(&string).unwrap();
+        print!("{}", buffer);
     }
 }

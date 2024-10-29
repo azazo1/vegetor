@@ -1,8 +1,7 @@
-use std::fs::read_to_string;
 use std::path::Path;
-use crate::error;
-use std::{fmt, io, fs};
-use crate::editor::terminal::{Size, Location, Terminal};
+use crate::{error, CharsCount};
+use std::{fmt, fs};
+use crate::editor::terminal::{Size, Location};
 
 
 #[derive(Debug)]
@@ -24,9 +23,16 @@ impl Buffer {
     /// 从文件中加载 Buffer, 加载完毕之后 carpet 在末尾.
     pub fn load(&mut self, file: impl AsRef<Path>) -> error::Result<()> {
         self.clear();
-        let s = read_to_string(file)?;
-        self.lines = s.split('\n').map(str::to_string).collect();
-        self.carpet = Location { x: self.lines.get(self.lines.len() - 1).unwrap().len(), y: self.lines.len() - 1 };
+        let s = fs::read_to_string(file)?;
+        self.lines = s.split('\n').map(|x| x.trim_matches(|c| c == '\r' || c == '\n').to_string()).collect();
+        let line_cnt = self.lines.len();
+        if line_cnt == 0 {
+            self.carpet.x = 0;
+            self.carpet.y = 0;
+        } else {
+            self.carpet.x = self.lines.get(line_cnt - 1).unwrap().chars_count();
+            self.carpet.y = line_cnt - 1;
+        }
         Ok(())
     }
 
@@ -127,8 +133,7 @@ impl Buffer {
     }
 
     /// 移动 carpet 到指定位置.
-    #[cfg(test)]
-    pub fn seek_uncheck(&mut self, carpet_pos: Location) {
+    pub(crate) fn seek_unchecked(&mut self, carpet_pos: Location) {
         self.carpet = carpet_pos;
     }
 
@@ -189,7 +194,7 @@ mod test {
     fn write_to_buffer() {
         let mut buffer = Buffer::new();
         buffer.load("Cargo.lock").unwrap();
-        buffer.seek_uncheck(Location { x: 2, y: 1 });
+        buffer.seek_unchecked(Location { x: 2, y: 1 });
         write!(buffer, "Hello World").unwrap();
         println!("{}", buffer);
     }

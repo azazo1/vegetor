@@ -1,11 +1,13 @@
+use crossterm::event::KeyCode;
 use std::path;
 use std::io;
-use crate::error;
+use crate::{error, CharsCount};
 use crate::editor::buffer::Buffer;
 use crate::editor::terminal::{Location, Size, Terminal};
 
 
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
+/// carpet 的各种移动方式.
 pub enum CarpetMove {
     /// carpet 向上一行.
     Up,
@@ -43,6 +45,20 @@ pub enum CarpetMove {
     ///
     /// `跳转` 不包括行内的 carpet 移动.
     NextJump,
+}
+
+impl TryFrom<KeyCode> for CarpetMove {
+    type Error = ();
+
+    fn try_from(value: KeyCode) -> Result<Self, Self::Error> {
+        Ok(match value {
+            KeyCode::Left => CarpetMove::Left,
+            KeyCode::Right => CarpetMove::Right,
+            KeyCode::Up => CarpetMove::Up,
+            KeyCode::Down => CarpetMove::Down,
+            _ => { Err(())? }
+        })
+    }
 }
 
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
@@ -107,7 +123,7 @@ impl EditArea {
         // todo 管理 buffer_display_offset.
     }
 
-    /// 只由外部调用, 用于标识已经完成显示的步骤.
+    /// 用于标识已经完成显示的步骤, 只由外部调用.
     pub fn unset_need_printing(&mut self) {
         self.need_printing = false;
     }
@@ -116,20 +132,9 @@ impl EditArea {
         self.need_printing
     }
 
-    /// 仅由内部调用, 标记自身需要重绘.
-    fn set_need_printing(&mut self) {
+    /// 标记自身需要重绘, 可由内部调用也可由外部调用.
+    pub fn set_need_printing(&mut self) {
         self.need_printing = true;
-    }
-
-    /// 移动 carpet, 会根据 display_area 协调  buffer_display_offset 以使 buffer
-    /// 的显示内容随 carpet 移动而变化.
-    ///
-    /// # Errors
-    ///
-    /// - [`Error::CarpetOutOfRange`]: carpet 移动到的位置不合理.
-    pub fn move_carpet_to(&mut self, loc: Location) -> error::Result<()> {
-        self.set_need_printing();
-        todo!()
     }
 
     /// 把 buffer 内容打印到终端.
@@ -146,21 +151,22 @@ impl EditArea {
     pub fn print_to(&self, terminal: &mut Terminal) -> io::Result<()> {
         terminal.hide_cursor()?;
         for row in 0..self.display_area.height() {
+            // 清空在显示区域内的内容.
             terminal.move_cursor_to(Location::new(self.display_area.x(), self.display_area.y() + row))?;
-            let print_len = match self.buffer.get(row + self.buffer_display_offset.y) {
+            terminal.print(" ".repeat(self.display_area.width()))?;
+
+            terminal.move_cursor_to(Location::new(self.display_area.x(), self.display_area.y() + row))?;
+            match self.buffer.get(row + self.buffer_display_offset.y) {
                 Some(line) => {
-                    let len = self.display_area.width().min(line.len() - self.buffer_display_offset.x);
+                    let len = self.display_area.width().min(line.chars_count() - self.buffer_display_offset.x);
                     // .min(line.width_cjk() - self.buffer_display_offset.x) // todo 测试 unicode width 是否准确, 多拿中文测.
                     terminal.print(&line[
                         self.buffer_display_offset.x
                             ..(self.buffer_display_offset.x + len)
                         ])?;
-                    len
                 }
-                None => { 0 }
+                None => {}
             };
-            // 补充打印结尾的空格, 清除原来的内容, 注意不能清除完整的一行, 不然其他部分的内容会被清除.
-            terminal.print(" ".repeat(self.display_area.width() - print_len))?;
         }
         let carpet = self.buffer.carpet();
         let offset_x = carpet.x.saturating_sub(self.buffer_display_offset.x).min(self.display_area.width());
@@ -191,7 +197,7 @@ impl EditArea {
         for row_offset in 0..buffer_size.height { // 这里已经确认了 welcome_buffer 高度比显示高度小了.
             let row = row_offset + start_row;
             let line = self.welcome_buffer.get(row_offset).unwrap();
-            let column = start_column - line.len() / 2;
+            let column = start_column - line.chars_count() / 2;
             // 清除区域内的字符.
             terminal.move_cursor_to(Location::new(self.display_area.x(), row))?;
             terminal.print(" ".repeat(self.display_area.width()))?;
@@ -216,5 +222,86 @@ impl EditArea {
 
     pub fn load_welcome(&mut self, welcome_file: impl AsRef<path::Path>) -> error::Result<()> {
         self.welcome_buffer.load(welcome_file)
+    }
+
+    pub fn load_buffer(&mut self, file: impl AsRef<path::Path>) -> error::Result<()> {
+        self.buffer.load(file)
+    }
+}
+
+impl EditArea {
+    fn move_carpet_left(&mut self) -> error::Result<()> {
+        let mut carpet = self.buffer.carpet();
+        if carpet.x == 0 {
+            if carpet.y > 0 {
+                match self.buffer.get(carpet.y - 1) {
+                    Some(line) => {
+                        carpet.x = line.chars_count(); // 移动到行末, 也就是最后一个字符的后面.
+                        carpet.y -= 1;
+                    }
+                    None => {
+                        carpet.y = 0;
+                    }
+                }
+            }
+        } else {
+            carpet.x -= 1;
+        }
+        self.move_carpet_to(carpet)
+    }
+
+    fn move_carpet_right(&mut self) -> error::Result<()> {
+        let mut carpet = self.buffer.carpet();
+        let line = self.buffer.get(carpet.y);
+        match line {
+            None => {
+                // 到了末尾行.
+                carpet.x = 0;
+                carpet.y = self.buffer.len();
+            }
+            Some(line) => {
+                if carpet.x == line.chars_count() {
+                    // 到了行末.
+                    if self.buffer.get(carpet.y + 1).is_some() {
+                        // 下一行有内容.
+                        carpet.x = 0;
+                        carpet.y += 1;
+                    }
+                } else {
+                    carpet.x += 1;
+                }
+            }
+        }
+        self.move_carpet_to(carpet)
+    }
+
+
+    /// 移动 carpet, 会根据 display_area 协调  buffer_display_offset 以使 buffer
+    /// 的显示内容随 carpet 移动而变化.
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::CarpetOutOfRange`]: carpet 移动到的位置不合理.
+    pub fn move_carpet_to(&mut self, loc: Location) -> error::Result<()> {
+        // todo 变化 self.buffer_display_offset,
+        // todo 由于此处没有持有 terminal 引用, 不管 self.buffer_display_offset 是否发生了变化, 都需要 set_need_printing.
+        self.buffer.seek_unchecked(loc);
+        self.set_need_printing();
+        Ok(())
+    }
+
+    /// 对 carpet 执行特定的移动操作.
+    /// 具体操作见 [`CarpetMove`].
+    pub fn move_carpet(&mut self, carpet_move: CarpetMove) -> error::Result<()> {
+        match carpet_move {
+            CarpetMove::Left => self.move_carpet_left()?,
+            CarpetMove::Right => self.move_carpet_right()?,
+            // CarpetMove::Up => self.move_carpet_up(),
+            // CarpetMove::Down => self.move_carpet_down(),
+            _ => {
+                todo!()
+            }
+        }
+        Ok(())
     }
 }

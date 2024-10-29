@@ -1,21 +1,9 @@
 use std::fs::read_to_string;
 use std::path::Path;
-use thiserror;
+use crate::error;
 use std::{fmt, io, fs};
-use unicode_width::UnicodeWidthStr;
 use crate::editor::terminal::{Size, Location, Terminal};
 
-#[derive(Debug, thiserror::Error)]
-pub enum Error {
-    #[error("The print area size doesn't fit the buffer.")]
-    PrintAreaSizeNotFit,
-    #[error("I/O error: {0}")]
-    IOError(#[from] io::Error),
-    #[error("Carpet out of buffer height, carpet y: {carpet}, buffer height: {height}.")]
-    CarpetOutOfHeight { carpet: usize, height: usize },
-    #[error("Carpet out of text len, carpet x: {carpet}, current line length: {len}.")]
-    CarpetOutOfLen { carpet: usize, len: usize },
-}
 
 #[derive(Debug)]
 /// 储存文本内容.
@@ -34,8 +22,8 @@ impl Buffer {
     }
 
     /// 从文件中加载 Buffer, 加载完毕之后 carpet 在末尾.
-    pub fn load(&mut self, file: impl AsRef<Path>) -> Result<(), Error> {
-        self.lines.clear();
+    pub fn load(&mut self, file: impl AsRef<Path>) -> error::Result<()> {
+        self.clear();
         let s = read_to_string(file)?;
         self.lines = s.split('\n').map(str::to_string).collect();
         self.carpet = Location { x: self.lines.get(self.lines.len() - 1).unwrap().len(), y: self.lines.len() - 1 };
@@ -94,14 +82,14 @@ impl Buffer {
     /// # Errors
     /// - [`Error::CarpetOutOfHeight`]: carpet 在竖直方向上超出.
     /// - [`Error::CarpetOutOfLen`]: carpet 在水平方向上超出.
-    fn check_carpet(&self) -> Result<(), Error> {
+    fn check_carpet(&self) -> error::Result<()> {
         if self.carpet.y > self.len() { // 允许等于, 因为超出文字一行可以用来输入新的行.
-            return Err(Error::CarpetOutOfHeight { carpet: self.carpet.y, height: self.len() });
+            return Err(error::Error::CarpetOutOfHeight { carpet: self.carpet.y, height: self.len() });
         }
         let current_line = self.get_current_line();
         let len = if matches!(current_line, None) { 0 } else { current_line.unwrap().len() };
         if self.carpet.x > len { // 允许等于, 同上.
-            Err(Error::CarpetOutOfLen { carpet: self.carpet.x, len })
+            Err(error::Error::CarpetOutOfLen { carpet: self.carpet.x, len })
         } else {
             Ok(())
         }
@@ -133,7 +121,7 @@ impl Buffer {
     /// # Errors
     ///
     /// - [`io::Error`].
-    pub fn save(&self, path: impl AsRef<Path>) -> Result<(), Error> {
+    pub fn save(&self, path: impl AsRef<Path>) -> error::Result<()> {
         fs::write(path, self.lines.join("\n"))?;
         Ok(())
     }

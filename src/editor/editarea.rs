@@ -1,5 +1,6 @@
+use std::path;
 use std::io;
-use crate::editor::error;
+use crate::error;
 use crate::editor::buffer::Buffer;
 use crate::editor::terminal::{Location, Size, Terminal};
 
@@ -208,12 +209,12 @@ impl EditArea {
             buffer_display_offset: Location::new(0, 0),
             display_area: Area::new(0, 0, 0, 0),
             buffer: Buffer::new(),
-            welcome_buffer: {
-                let mut buffer = Buffer::new();
-                buffer.load("welcome.txt").unwrap();
-                buffer
-            }, // todo 提供设置途径.
+            welcome_buffer: Buffer::new(),
             need_printing: false,
         }
+    }
+
+    pub fn load_welcome(&mut self, welcome_file: impl AsRef<path::Path>) -> error::Result<()> {
+        self.welcome_buffer.load(welcome_file)
     }
 }

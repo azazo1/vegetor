@@ -1,15 +1,47 @@
 use std::io;
+use crate::editor::error;
 use crate::editor::buffer::Buffer;
 use crate::editor::terminal::{Location, Size, Terminal};
 
-#[derive(Debug, thiserror::Error)]
-pub enum Error {
-    #[error("IOError occurred: {0:?}")]
-    IOError(#[from] io::Error),
-    #[error("Buffer size {buffer_size:?} exceeds the display area size {area_size:?}.")]
-    BufferSizeExceeds { buffer_size: Size, area_size: Size },
-    #[error("Carpet out of range.")]
-    CarpetOutOfRange,
+
+#[derive(Debug, Eq, PartialEq, Copy, Clone)]
+pub enum CarpetMove {
+    /// carpet 向上一行.
+    Up,
+    /// carpet 向下一行.
+    Down,
+    /// carpet 向左一个字符.
+    Left,
+    /// carpet 向右一个字符.
+    Right,
+    /// carpet 移动到下一个单词开始.
+    NextWord,
+    /// carpet 移动到上一个单词开始.
+    PrevWord,
+    /// carpet 移动到行首.
+    StartOfLine,
+    /// carpet 移动到行末.
+    EndOfLine,
+    /// carpet 移动到下一页.
+    PageUp,
+    /// carpet 移动到上一页.
+    PageDown,
+    /// carpet 移动到文本初始.
+    GlobalStart,
+    /// carpet 移动到文本末尾.
+    GlobalEnd,
+    /// carpet 移动到跳转前的位置.
+    ///
+    /// # Notice
+    ///
+    /// `跳转` 不包括行内的 carpet 移动.
+    PrevTrace,
+    /// carpet 移动到跳转后的位置.
+    ///
+    /// # Notice
+    ///
+    /// `跳转` 不包括行内的 carpet 移动.
+    NextJump,
 }
 
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
@@ -94,7 +126,7 @@ impl EditArea {
     /// # Errors
     ///
     /// - [`Error::CarpetOutOfRange`]: carpet 移动到的位置不合理.
-    pub fn move_carpet_to(&mut self, loc: Location) -> Result<(), Error> {
+    pub fn move_carpet_to(&mut self, loc: Location) -> error::Result<()> {
         self.set_need_printing();
         todo!()
     }
@@ -141,12 +173,12 @@ impl EditArea {
     ///
     /// # Errors
     ///
-    /// - Error::IOError: 见 [`io::Error`](io::Error).
-    /// - Error::BufferSizeExceeds: welcome_buffer 的横向长度或者纵向长度超过了可打印范围.
-    fn print_welcome_to(&self, terminal: &mut Terminal) -> Result<(), Error> {
+    /// - [`error::Error::IOError`]: 见 [`io::Error`](io::Error).
+    /// - [`error::Error::BufferSizeExceeds`]: welcome_buffer 的横向长度或者纵向长度超过了可打印范围.
+    pub fn print_welcome_to(&self, terminal: &mut Terminal) -> error::Result<()> {
         let buffer_size = self.welcome_buffer.size();
         if !(self.display_area.size() > self.welcome_buffer.size()) { // 偏序比较.
-            return Err(Error::BufferSizeExceeds {
+            return Err(error::Error::BufferSizeExceeds {
                 buffer_size,
                 area_size: self.display_area.size(),
             });
@@ -171,7 +203,7 @@ impl EditArea {
         Ok(())
     }
 
-    fn new() -> EditArea {
+    pub fn new() -> EditArea {
         EditArea {
             buffer_display_offset: Location::new(0, 0),
             display_area: Area::new(0, 0, 0, 0),

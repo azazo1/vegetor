@@ -93,7 +93,7 @@ impl Terminal {
 
     pub fn move_cursor_to(&mut self, loc: Location) -> io::Result<()> {
         let loc = loc.as_u16_checked().ok_or_else(
-            || Err(io::Error::new(io::ErrorKind::InvalidInput, "location cannot be cast to (u16, u16)"))
+            || io::Error::new(io::ErrorKind::InvalidInput, "location cannot be cast to (u16, u16)")
         )?;
         self.queue_command(MoveTo(loc.0, loc.1))
     }
@@ -103,6 +103,12 @@ impl Terminal {
     /// 见 `crossterm::event::read` 函数.
     pub fn read_event_blocking(&self) -> io::Result<event::Event> {
         event::read()
+    }
+
+    /// 获取终端尺寸.
+    pub fn size(&self) -> io::Result<Size> {
+        let size = crossterm::terminal::size()?;
+        Ok(size.into())
     }
 }
 
@@ -135,6 +141,12 @@ macro_rules! usize_pair {
         impl Into<(u16, u16)> for $t {
             fn into(self) -> (u16, u16) {
                 self.as_u16()
+            }
+        }
+        
+        impl Into<$t> for (u16, u16) {
+            fn into(self) -> $t {
+                $t::new(self.0 as usize, self.1 as usize)
             }
         }
 

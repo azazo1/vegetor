@@ -122,6 +122,7 @@ impl Editor {
                 buffer.load(path)?;
             }
         }
+        editor.edit_area.update_display_offset();
 
         Ok(editor)
     }
@@ -182,6 +183,7 @@ impl Editor {
                 let columns = columns as usize;
                 let rows = rows as usize;
                 self.edit_area.configure_area(Area::new(0, 0, columns, rows));
+                self.edit_area.update_display_offset();
             }
             _ => {}
         }

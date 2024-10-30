@@ -58,15 +58,6 @@ impl Buffer {
 
     /// 获取当前行, 如果当前行不存在则创建当前行及之前的空行, 并返回当前行.
     pub fn ensure_current_line(&mut self) -> &mut String {
-        // 很奇怪, 为什么这样编译不过, 不是有个分支表示不同的情况吗怎么还说多次可变借用.
-        // let line = self.get_current_line_mut();
-        // if let Some(line) = line {
-        //     return line;
-        // } else {
-        //     self.lines.push(String::new());
-        //     // ...
-        // }
-
         let line = self.get_current_line(); // 这里不能直接获取 mut 然后返回它, 不然会报二次可变借用的错误, 特奇怪.
         if line.is_some() {
             return self.get_current_line_mut().unwrap();
@@ -81,21 +72,25 @@ impl Buffer {
         }
     }
 
+    fn check_self_caret(&self) -> error::Result<()> {
+        self.check_caret(self.caret)
+    }
+
     /// 检查 caret 位置是否合理.
     /// - 竖直方向上: 检查 caret 是否在有效输入行内.
     /// - 水平方向上: 检查是否超出当前行文字范围.
     ///
     /// # Errors
     /// - [`Error::CaretOutOfHeight`]: caret 在竖直方向上超出.
-    /// - [`Error::CaretOutOfLen`]: caret 在水平方向上超出.
-    fn check_caret(&self) -> error::Result<()> {
-        if self.caret.y > self.len() { // 允许等于, 因为超出文字一行可以用来输入新的行.
-            return Err(error::Error::CaretOutOfHeight { caret: self.caret.y, height: self.len() });
+    /// - [`Error::CaretOutOfLen`]: caret 在水平方向上超出.    
+    pub fn check_caret(&self, caret: Location) -> error::Result<()> {
+        if caret.y >= self.len() { // 不允许等于, 如果要在新的一行写字, 先添加新行.
+            return Err(error::Error::CaretOutOfHeight { caret: caret.y, height: self.len() });
         }
-        let current_line = self.get_current_line();
-        let len = if matches!(current_line, None) { 0 } else { current_line.unwrap().len() };
-        if self.caret.x > len { // 允许等于, 同上.
-            Err(error::Error::CaretOutOfLen { caret: self.caret.x, len })
+        let line = self.get(caret.y);
+        let len = if matches!(line, None) { 0 } else { line.unwrap().len() };
+        if caret.x > len { // 允许等于, 以便在行末添加文本.
+            Err(error::Error::CaretOutOfLen { caret: caret.x, len })
         } else {
             Ok(())
         }
@@ -153,7 +148,7 @@ impl fmt::Write for Buffer {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         for c in s.chars() {
             if !c.is_control() && c != '\r' {
-                self.check_caret().or_else(|_| Err(fmt::Error))?;
+                self.check_self_caret().or_else(|_| Err(fmt::Error))?;
                 let caret_x = self.caret.x; // 只能在 ensure_current_line 前获取.
                 self.caret.x += 1;
                 let line = self.ensure_current_line();

@@ -1,6 +1,8 @@
 pub mod editor;
 pub mod error;
 
+const CARGO_PKG_NAME: &'static str = env!("CARGO_PKG_NAME");
+
 trait CharsCount {
     fn chars_count(&self) -> usize;
 }

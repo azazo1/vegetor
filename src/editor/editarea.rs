@@ -1,10 +1,18 @@
 use crossterm::event::KeyCode;
-use std::path;
 use std::io;
 use crate::{error, CharsCount};
 use crate::editor::buffer::Buffer;
 use crate::editor::terminal::{Location, Size, Terminal};
 
+/// caret 上下移动时, 显示区域发生滚动会尽可能不会让 caret 直接贴住可显示范围的边缘, 而是保留一定的可视行数预览后/前几行.
+/// 此变量用于设置要保留 caret 与画面在竖直上的距离的行数.
+///
+/// # 特殊情况
+///
+/// - 如果可显示范围的高度不足 `2 * VERTICAL_PADDING`, 那么此参数无效, 页面滚动将按照.
+/// - 如果文本内容高度大于显示区域高度, 在 caret 即将到达文本底部时, 文本的末尾行最多上升到显示区域的最后一行,
+/// 而不是继续向上产生显示区域的空白行.
+const VERTICAL_PADDING: usize = 3;
 
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
 /// caret 的各种移动方式.
@@ -220,12 +228,12 @@ impl EditArea {
         }
     }
 
-    pub fn load_welcome(&mut self, welcome_file: impl AsRef<path::Path>) -> error::Result<()> {
-        self.welcome_buffer.load(welcome_file)
+    pub(crate) fn get_buffer_mut(&mut self) -> &mut Buffer {
+        &mut self.buffer
     }
 
-    pub fn load_buffer(&mut self, file: impl AsRef<path::Path>) -> error::Result<()> {
-        self.buffer.load(file)
+    pub(crate) fn get_welcome_buffer_mut(&mut self) -> &mut Buffer {
+        &mut self.welcome_buffer
     }
 }
 
@@ -312,10 +320,26 @@ impl EditArea {
     /// # Errors
     ///
     /// - [`Error::CaretOutOfRange`]: caret 移动到的位置不合理.
-    pub fn move_caret_to(&mut self, loc: Location) -> error::Result<()> {
-        // todo 检测 caret 移动的位置是否合理.
-        // todo 变化 self.buffer_display_offset,
-        self.buffer.seek_unchecked(loc);
+    pub fn move_caret_to(&mut self, caret: Location) -> error::Result<()> {
+        // 检测 caret 移动的位置是否合理.
+        self.buffer.check_caret(caret)?;
+        self.buffer.seek_unchecked(caret);
+        // 变化 self.buffer_display_offset.
+        // 检测 caret 是否在竖直方向移动较大.
+        let v_padding = if self.display_area.height() >= 2 * VERTICAL_PADDING { VERTICAL_PADDING } else { 0 };
+        let caret_y_offset_from_display: isize = caret.y as isize - self.buffer_display_offset.y as isize;
+        if caret_y_offset_from_display >= (self.display_area.height() as isize - v_padding as isize) {
+            self.buffer_display_offset.y =
+                (caret.y + v_padding).min(self.buffer.len() /*让最后一行最高上升到最底边*/)
+                    - self.display_area.height();
+        } else if caret_y_offset_from_display < v_padding as isize {
+            if caret.y >= v_padding {
+                self.buffer_display_offset.y = caret.y - v_padding;
+            } else {
+                self.buffer_display_offset.y = 0;
+            }
+        }
+        // todo 检测 caret 是否在水平方向移动较大.
         // 由于此处没有持有 terminal 引用, 不管 self.buffer_display_offset 是否发生了变化, 都需要 set_need_printing.
         self.set_need_printing();
         Ok(())

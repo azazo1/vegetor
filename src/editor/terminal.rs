@@ -69,9 +69,9 @@ impl Terminal {
     }
 
     pub fn destruct(&mut self) -> io::Result<()> {
-        self.flush()?;
         disable_raw_mode()?;
         self.exit_alternate_screen()?;
+        self.flush()?; // 这样才能让 exit_alternate_screen 立即生效, 不然的话可能导致报错输出在 alternate_screen 中.
         Ok(())
     }
 

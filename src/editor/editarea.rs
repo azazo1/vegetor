@@ -240,6 +240,7 @@ impl EditArea {
                         caret.y -= 1;
                     }
                     None => {
+                        // 当前是第一行, 或者没有内容.
                         caret.y = 0;
                     }
                 }
@@ -275,6 +276,35 @@ impl EditArea {
         self.move_caret_to(caret)
     }
 
+    fn move_caret_up(&mut self) -> error::Result<()> {
+        // todo 添加对非 ascii 字符宽度的字符的支持, 比如适配中文的宽度.
+        let mut caret = self.buffer.caret();
+        if caret.y != 0 {
+            let prev_line = self.buffer.get(caret.y - 1);
+            match prev_line {
+                Some(line) => {
+                    caret.y -= 1;
+                    caret.x = caret.x.min(line.chars_count());
+                }
+                None => { /* 可能是没有内容, 不变化 y 值.*/ }
+            }
+            // caret.y == 0 不用考虑, 因为是向上.
+        }
+        self.move_caret_to(caret)
+    }
+
+    fn move_caret_down(&mut self) -> error::Result<()> {
+        let mut caret = self.buffer.caret();
+        let next_line = self.buffer.get(caret.y + 1);
+        match next_line {
+            Some(line) => {
+                caret.y += 1;
+                caret.x = caret.x.min(line.chars_count());
+            }
+            None => {}
+        }
+        self.move_caret_to(caret)
+    }
 
     /// 移动 caret, 会根据 display_area 协调  buffer_display_offset 以使 buffer
     /// 的显示内容随 caret 移动而变化.
@@ -297,8 +327,8 @@ impl EditArea {
         match caret_move {
             CaretMove::Left => self.move_caret_left()?,
             CaretMove::Right => self.move_caret_right()?,
-            // CaretMove::Up => self.move_caret_up(),
-            // CaretMove::Down => self.move_caret_down(),
+            CaretMove::Up => self.move_caret_up()?,
+            CaretMove::Down => self.move_caret_down()?,
             _ => {
                 todo!()
             }

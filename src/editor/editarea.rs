@@ -128,7 +128,7 @@ impl EditArea {
         self.need_printing = false;
     }
 
-    pub fn need_printing(&mut self) -> bool {
+    pub fn need_printing(&self) -> bool {
         self.need_printing
     }
 

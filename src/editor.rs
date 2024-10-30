@@ -54,10 +54,21 @@ impl Editor {
 
     pub fn run(&mut self) -> error::Result<()> {
         while self.state != State::Exiting {
-            if self.edit_area.need_printing() {
+            if self.check_need_printing() {
+                self.terminal.clear_screen()?;
                 match self.state {
-                    State::Welcoming => self.edit_area.print_welcome_to(&mut self.terminal)?,
-                    State::Editing => self.edit_area.print_to(&mut self.terminal)?,
+                    State::Welcoming => {
+                        self.edit_area.print_welcome_to(&mut self.terminal).or_else(|e| {
+                            match e {
+                                // 忽略 buffer 尺寸不合适的情况.
+                                error::Error::BufferSizeExceeds { .. } => { Ok(()) }
+                                _ => { Err(e) }
+                            }
+                        })?;
+                    }
+                    State::Editing => {
+                        self.edit_area.print_to(&mut self.terminal)?
+                    }
                     _ => {}
                 }
                 self.edit_area.unset_need_printing();
@@ -71,7 +82,7 @@ impl Editor {
     fn handle_event(&mut self) -> error::Result<()> {
         let evt = self.terminal.read_event_blocking();
         match evt {
-            Ok(Event::Key(KeyEvent { state, code, kind, modifiers })) => {
+            Ok(Event::Key(KeyEvent { code, kind, modifiers, .. })) => {
                 if kind == KeyEventKind::Press {
                     match code {
                         KeyCode::Char('q') if modifiers == KeyModifiers::CONTROL => {
@@ -98,6 +109,11 @@ impl Editor {
         }
         Ok(())
     }
+
+    /// 检查子元素中是否有需要重新绘制的.
+    fn check_need_printing(&self) -> bool {
+        self.edit_area.need_printing()
+    }
 }
 
 impl Drop for Editor {
@@ -115,7 +131,7 @@ mod split_screen_test {
     use crate::editor::terminal::Terminal;
     use crate::error;
 
-    pub struct Editor {
+    struct Editor {
         edit_area: EditArea,
         edit_area_2: EditArea,
         // status_bar: StatusBar,
@@ -128,7 +144,7 @@ mod split_screen_test {
             let _ = Terminal::new().destruct(); // 唯一的 Terminal 二次构建情况, 我实在想不出来到底怎么合适的使用唯一那个 Terminal.
         }
 
-        pub fn build() -> error::Result<Editor> {
+        fn build() -> error::Result<Editor> {
             let raw_hook = std::panic::take_hook();
             std::panic::set_hook(Box::new(move |info| {
                 Editor::panic_handler(info);
@@ -140,7 +156,7 @@ mod split_screen_test {
             let terminal_size = terminal.size()?;
             let horizontal_sep = terminal_size.width / 2;
             let mut edit_area = EditArea::new();
-            edit_area.configure_area(Area::new(0, 0, horizontal_sep, terminal_size.height)); // todo 改.
+            edit_area.configure_area(Area::new(0, 0, horizontal_sep, terminal_size.height));
             #[cfg(debug_assertions)] {
                 edit_area.load_buffer("welcome.txt")?;
             }
@@ -161,7 +177,7 @@ mod split_screen_test {
             })
         }
 
-        pub fn run(&mut self) -> error::Result<()> {
+        fn run(&mut self) -> error::Result<()> {
             while self.state != State::Exiting {
                 if self.edit_area.need_printing() {
                     match self.state {
@@ -202,7 +218,6 @@ mod split_screen_test {
                                 } else if let Ok(caret_move) = code.try_into() {
                                     self.edit_area.move_caret(caret_move)?;
                                 }
-                                // todo
                             }
                         }
                     }
@@ -219,7 +234,7 @@ mod split_screen_test {
             Ok(())
         }
     }
-    
+
     #[test]
     fn split_screen_run() {
         Editor::build().unwrap().run().unwrap();

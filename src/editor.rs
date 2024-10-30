@@ -123,6 +123,7 @@ impl Editor {
             }
         }
         editor.edit_area.update_display_offset();
+        // editor.edit_area.set_need_printing();
 
         Ok(editor)
     }
@@ -206,12 +207,25 @@ impl Drop for Editor {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+    use crate::editor::{BufferLoadConfig, Editor, EditorBuildConfig};
+
     #[test]
     fn draw_in_split() {}
 
     #[test]
-    fn scroll_vertical() {}
+    fn scroll_vertical() {
+        let mut config = EditorBuildConfig::default();
+        config.edit_text_config = BufferLoadConfig::File(Path::new("example-vertical.txt"));
+        let mut editor = Editor::build(&config).unwrap();
+        editor.run().unwrap();
+    }
 
     #[test]
-    fn scroll_horizontal() {}
+    fn scroll_horizontal() {
+        let mut config = EditorBuildConfig::default();
+        config.edit_text_config = BufferLoadConfig::File(Path::new("example-horizontal.txt"));
+        let mut editor = Editor::build(&config).unwrap();
+        editor.run().unwrap();
+    }
 }

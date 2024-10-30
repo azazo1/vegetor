@@ -7,7 +7,7 @@ use vegetor::editor::{Editor, EditorBuildConfig, BufferLoadConfig};
 fn main() {
     let mut config = EditorBuildConfig::default();
     config.welcome_config = BufferLoadConfig::File(path::Path::new("welcome.txt"));
-    config.edit_text_config = BufferLoadConfig::File(path::Path::new("example.txt"));
+    config.edit_text_config = BufferLoadConfig::File(path::Path::new("example-vertical.txt"));
     let mut editor = Editor::build(&config).unwrap();
     editor.run().unwrap();
 }

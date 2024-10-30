@@ -14,6 +14,9 @@ use crate::editor::terminal::{Location, Size, Terminal};
 /// 而不是继续向上产生显示区域的空白行.
 const VERTICAL_PADDING: usize = 3;
 
+/// caret 移动时与水平边缘的距离, 基本同理于 [`VERTICAL_PADDING`].
+const HORIZONTAL_PADDING: usize = 5;
+
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
 /// caret 的各种移动方式.
 pub enum CaretMove {
@@ -83,30 +86,37 @@ impl Area {
         }
     }
 
+    #[inline]
     pub fn x(&self) -> usize {
         self.left_top.x
     }
 
+    #[inline]
     pub fn y(&self) -> usize {
         self.left_top.y
     }
 
+    #[inline]
     pub fn width(&self) -> usize {
         self.size.width
     }
 
+    #[inline]
     pub fn height(&self) -> usize {
         self.size.height
     }
 
+    #[inline]
     pub fn size(&self) -> Size {
         self.size
     }
 
+    #[inline]
     pub fn left_top(&self) -> Location {
         self.left_top
     }
 
+    #[inline]
     pub fn center(&self) -> Location {
         Location::new(self.width() / 2 + self.x(), self.height() / 2 + self.y())
     }
@@ -166,12 +176,16 @@ impl EditArea {
             terminal.move_cursor_to(Location::new(self.display_area.x(), self.display_area.y() + row))?;
             match self.buffer.get(row + self.buffer_display_offset.y) {
                 Some(line) => {
-                    let len = self.display_area.width().min(line.chars_count() - self.buffer_display_offset.x);
+                    let len = self.display_area.width()
+                        // 这里 line.chars_count() 可能小于 offset.x, 因为视角移动到了太右侧.
+                        .min(line.chars_count().saturating_sub(self.buffer_display_offset.x));
                     // .min(line.width_cjk() - self.buffer_display_offset.x) // todo 测试 unicode width 是否准确, 多拿中文测.
-                    terminal.print(&line[
-                        self.buffer_display_offset.x
-                            ..(self.buffer_display_offset.x + len)
-                        ])?;
+                    if len > 0 {
+                        terminal.print(&line[
+                            self.buffer_display_offset.x
+                                ..(self.buffer_display_offset.x + len)
+                            ])?;
+                    }
                 }
                 None => {}
             };
@@ -239,18 +253,23 @@ impl EditArea {
     /// 根据 buffer 的 caret 来更新 buffer_display_offset.
     ///
     /// 适合在 buffer 被修改之后调用来让画面同步 caret 的变化.
-    pub fn update_display_offset(&mut self) {
+    ///
+    /// # Returns
+    ///
+    /// 返回 offset 是否发生变化, 即画面是否需要改变.
+    pub fn update_display_offset(&mut self) -> bool {
+        let raw_offset = self.buffer_display_offset;
         let caret = self.buffer.caret();
-        // 变化 self.buffer_display_offset.
         // 检测 caret 是否在竖直方向移动较大.
         let v_padding = if self.display_area.height() >= 2 * VERTICAL_PADDING { VERTICAL_PADDING } else { 0 };
-        let caret_y_offset_from_display: isize = caret.y as isize - self.buffer_display_offset.y as isize;
-        if caret_y_offset_from_display >= (self.display_area.height() as isize - v_padding as isize) {
-            let target_bottom = (caret.y + v_padding)
-                .min(self.buffer.len() /*让最后一行最高上升到最底边(只在文本高高度大于显示区域的时候)*/)
-                .max(self.display_area.height() /*防止文本内容过短*/);
-            self.buffer_display_offset.y = target_bottom - self.display_area.height();
-        } else if caret_y_offset_from_display < v_padding as isize {
+        let y_display = caret.y as isize - self.buffer_display_offset.y as isize; // caret 在显示区域的 y 坐标.
+        if y_display >= (self.display_area.height() as isize - v_padding as isize) {
+            // 向下较多.
+            let bottom = (caret.y + v_padding)
+                .min(self.buffer.len() /*让最后一行最高上升到最底边(只在文本高高度大于显示区域的时候)*/);
+            self.buffer_display_offset.y = bottom.saturating_sub(self.display_area.height());
+        } else if y_display < v_padding as isize {
+            // 向上较多.
             if caret.y >= v_padding {
                 self.buffer_display_offset.y = caret.y - v_padding;
             } else {
@@ -265,7 +284,21 @@ impl EditArea {
             // 如果浮空了就贴底, 通过 saturating_sub 暗含了和 0 的比较.
             self.buffer_display_offset.y -= self.display_area.height().saturating_sub(bottom_offset_from_display);
         }
-        // todo 检测 caret 是否在水平方向移动较大. 
+        // 检测 caret 是否在水平方向移动较大. 
+        let h_padding = if self.display_area.width() >= 2 * HORIZONTAL_PADDING { HORIZONTAL_PADDING } else { 0 };
+        let x_display = caret.x as isize - self.buffer_display_offset.x as isize; // caret 在显示区域的 x 坐标.
+        if x_display < h_padding as isize {
+            if caret.x < h_padding {
+                self.buffer_display_offset.x = 0;
+            } else {
+                self.buffer_display_offset.x = caret.x - h_padding;
+            }
+        } else if x_display > (self.display_area.width() - h_padding) as isize {
+            let right = caret.x + h_padding;
+            // 这里不需要行末贴边, 让用户感知到这行后面是空的.
+            self.buffer_display_offset.x = right.saturating_sub(self.display_area.width());
+        }
+        self.buffer_display_offset == raw_offset
     }
 }
 
@@ -359,6 +392,7 @@ impl EditArea {
         self.update_display_offset();
         // 由于此处没有持有 terminal 引用, 无法直接 move_cusor_to.
         // 所以不管 self.buffer_display_offset 是否发生了变化, 都需要 set_need_printing.
+        // todo 持有 terminal 借用并移动指针, 减少画面闪烁.
         self.set_need_printing();
         Ok(())
     }
@@ -378,3 +412,4 @@ impl EditArea {
         Ok(())
     }
 }
+// todo 解决移动光标的时候屏闪问题.

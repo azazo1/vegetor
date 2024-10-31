@@ -224,8 +224,8 @@ impl<'a> BufferReader<'a> {
 
     /// 向前回溯字符直到有字符让 f 返回 true.
     ///
-    /// caret 将指在第一个让 f 返回 true 的字符,
-    /// 下一次调用 [`BufferReader::next`] 将返回该字符.
+    /// caret 将指在第一个让 f 返回 true 的字符 (暂时称为 a) 的后面一个字符,
+    /// 下一次调用 [`BufferReader::prev`] 将返回该字符 (a).
     ///
     /// # Errors
     ///
@@ -233,8 +233,10 @@ impl<'a> BufferReader<'a> {
     pub fn back_until(&mut self, f: impl Fn(char) -> bool) -> error::Result<()> {
         let origin_caret = self.caret;
         loop {
+            let prev_caret = self.caret;
             match self.prev() {
                 Some(ch) if f(ch) => {
+                    self.caret = prev_caret;
                     return Ok(());
                 }
                 None => {
@@ -244,6 +246,14 @@ impl<'a> BufferReader<'a> {
                 _ => ()
             }
         }
+    }
+
+    pub fn back_until_blank(&mut self) -> error::Result<()> {
+        self.back_until(char::is_whitespace)
+    }
+
+    pub fn back_until_not_blank(&mut self) -> error::Result<()> {
+        self.back_until(|c| !c.is_whitespace())
     }
 }
 
@@ -295,6 +305,25 @@ impl<'a> BufferReader<'a> {
             let ch = line.chars().rev().next().unwrap();
             self.caret.x -= ch.len_utf8();
             Some(ch)
+        }
+    }
+
+    /// 查看当前 caret 指向的字符, 如果 caret 指向了内容末尾则返回 None.
+    pub fn peek(&self) -> Option<char> {
+        match self.buffer.get(self.caret.y) {
+            Some(line) => {
+                if self.caret.x < line.len() {
+                    let line = &line[self.caret.x..];
+                    line.chars().next()
+                } else if self.caret.y == self.buffer.lines_num() {
+                    // buffer 末尾.
+                    None
+                } else {
+                    // 行末.
+                    Some('\n')
+                }
+            }
+            None => None
         }
     }
 }

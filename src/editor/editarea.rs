@@ -413,7 +413,7 @@ impl EditArea {
         if self.buffer.lines_num() != 0 {
             let caret = Location::new(
                 self.buffer.get(self.buffer.lines_num() - 1).unwrap().len(),
-                self.buffer.lines_num(),
+                self.buffer.lines_num() - 1,
             );
             self.move_caret_to(caret).unwrap()
         } else {
@@ -425,7 +425,7 @@ impl EditArea {
         self.move_caret_to(Location::new(0, 0)).unwrap()
     }
 
-    fn move_caret_next_word(&mut self) -> Location {
+    fn move_caret_to_next_word(&mut self) -> Location {
         let mut reader = self.buffer.get_reader().unwrap();
         let ok = reader.skip_until_blank().is_ok() && reader.skip_until_not_blank().is_ok();
         if ok {
@@ -435,8 +435,24 @@ impl EditArea {
         }
     }
 
-    fn move_caret_prev_word(&mut self) -> Location {
-        todo!()
+    fn move_caret_to_prev_word(&mut self) -> Location {
+        let mut reader = self.buffer.get_reader().unwrap();
+        let ok = match reader.peek() {
+            Some(current_char) if !current_char.is_whitespace() => {
+                reader.back_until_blank().is_ok()
+                    && reader.back_until_not_blank().is_ok()
+                    && reader.back_until_blank().is_ok()
+            }
+            Some(_) | None => { // None 表示 caret 在 buffer 末尾.
+                reader.back_until_not_blank().is_ok()
+                    && reader.back_until_blank().is_ok()
+            }
+        };
+        if ok {
+            self.move_caret_to(reader.caret()).unwrap()
+        } else {
+            self.move_caret_to_global_start()
+        }
     }
 
     /// 移动 caret, 会根据 display_area 协调  buffer_display_offset 以使 buffer
@@ -472,8 +488,8 @@ impl EditArea {
             CaretMove::Right => self.move_caret_right(),
             CaretMove::Up => self.move_caret_up(),
             CaretMove::Down => self.move_caret_down(),
-            CaretMove::NextWord => self.move_caret_next_word(),
-            CaretMove::PrevWord => self.move_caret_prev_word(),
+            CaretMove::NextWord => self.move_caret_to_next_word(),
+            CaretMove::PrevWord => self.move_caret_to_prev_word(),
             CaretMove::GlobalEnd => self.move_caret_to_global_end(),
             CaretMove::GlobalStart => self.move_caret_to_global_start(),
             _ => {

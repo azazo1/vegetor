@@ -33,9 +33,9 @@ pub enum CaretMove {
     /// caret 移动到上一个单词开始.
     PrevWord,
     /// caret 移动到行首.
-    StartOfLine,
+    LineStart,
     /// caret 移动到行末.
-    EndOfLine,
+    LineEnd,
     /// caret 移动到下一页.
     PageUp,
     /// caret 移动到上一页.
@@ -75,8 +75,8 @@ impl TryFrom<&KeyEvent> for CaretMove {
             KeyCode::Left if modifiers == KeyModifiers::CONTROL | KeyModifiers::ALT => CaretMove::PrevTrace,
             KeyCode::Right if modifiers == KeyModifiers::CONTROL | KeyModifiers::ALT => CaretMove::NextTrace,
 
-            KeyCode::Home if modifiers == KeyModifiers::NONE => CaretMove::StartOfLine,
-            KeyCode::End if modifiers == KeyModifiers::NONE => CaretMove::EndOfLine,
+            KeyCode::Home if modifiers == KeyModifiers::NONE => CaretMove::LineStart,
+            KeyCode::End if modifiers == KeyModifiers::NONE => CaretMove::LineEnd,
 
             KeyCode::Home if modifiers == KeyModifiers::CONTROL => CaretMove::GlobalStart,
             KeyCode::End if modifiers == KeyModifiers::CONTROL => CaretMove::GlobalEnd,
@@ -356,7 +356,7 @@ impl EditArea {
 
     fn move_caret_right(&mut self) -> Location {
         let mut caret = self.buffer.caret();
-        let line = self.buffer.get(caret.y);
+        let line = self.buffer.get_current_line();
         match line {
             None => {
                 // 到了末尾行.
@@ -455,6 +455,19 @@ impl EditArea {
         }
     }
 
+    fn move_caret_to_line_end(&mut self) -> Location {
+        let line = self.buffer.get_current_line().unwrap();
+        let mut caret = self.buffer.caret();
+        caret.x = line.len();
+        self.move_caret_to(caret).unwrap()
+    }
+
+    fn move_caret_to_line_start(&mut self) -> Location {
+        let mut caret = self.buffer.caret();
+        caret.x = 0;
+        self.move_caret_to(caret).unwrap()
+    }
+
     /// 移动 caret, 会根据 display_area 协调  buffer_display_offset 以使 buffer
     /// 的显示内容随 caret 移动而变化.
     ///
@@ -492,10 +505,11 @@ impl EditArea {
             CaretMove::PrevWord => self.move_caret_to_prev_word(),
             CaretMove::GlobalEnd => self.move_caret_to_global_end(),
             CaretMove::GlobalStart => self.move_caret_to_global_start(),
+            CaretMove::LineEnd => self.move_caret_to_line_end(),
+            CaretMove::LineStart => self.move_caret_to_line_start(),
             _ => {
                 todo!("{:?}.", caret_move)
             }
         } // CaretOutOfRange 在这里不会出现, 因为都是计算好了的坐标移动.
     }
 }
-// todo 解决移动光标的时候屏闪问题.

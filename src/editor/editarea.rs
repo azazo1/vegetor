@@ -296,7 +296,7 @@ impl EditArea {
         if y_display >= (self.display_area.height() as isize - v_padding as isize) {
             // 向下较多.
             let bottom = (caret.y + v_padding)
-                .min(self.buffer.len() /*让最后一行最高上升到最底边(只在文本高高度大于显示区域的时候)*/);
+                .min(self.buffer.lines_num() /*让最后一行最高上升到最底边(只在文本高高度大于显示区域的时候)*/);
             self.buffer_display_offset.y = bottom.saturating_sub(self.display_area.height());
         } else if y_display < v_padding as isize {
             // 向上较多.
@@ -308,9 +308,9 @@ impl EditArea {
         }
         // 竖直方向的补充检查: 如果文本高度大于显示高度, 但是最后一行浮空(高于显示区域最后一行)了, 就让文本最后一行贴底.
         // 此检查针对用户拉高终端的操作.
-        if self.buffer.len() > self.display_area.height() {
+        if self.buffer.lines_num() > self.display_area.height() {
             // 最后一行之后一行在显示区域的竖直方向从第一行开始的偏移量.
-            let bottom_offset_from_display = self.buffer.len() - self.buffer_display_offset.y;
+            let bottom_offset_from_display = self.buffer.lines_num() - self.buffer_display_offset.y;
             // 如果浮空了就贴底, 通过 saturating_sub 暗含了和 0 的比较.
             self.buffer_display_offset.y -= self.display_area.height().saturating_sub(bottom_offset_from_display);
         }
@@ -361,7 +361,7 @@ impl EditArea {
             None => {
                 // 到了末尾行.
                 caret.x = 0;
-                caret.y = self.buffer.len();
+                caret.y = self.buffer.lines_num();
             }
             Some(line) => {
                 if caret.x == line.chars_count() {
@@ -409,15 +409,34 @@ impl EditArea {
         self.move_caret_to(caret).unwrap()
     }
 
+    fn move_caret_to_global_end(&mut self) -> Location {
+        if self.buffer.lines_num() != 0 {
+            let caret = Location::new(
+                self.buffer.get(self.buffer.lines_num() - 1).unwrap().len(),
+                self.buffer.lines_num(),
+            );
+            self.move_caret_to(caret).unwrap()
+        } else {
+            Location::new(0, 0)
+        }
+    }
+
+    fn move_caret_to_global_start(&mut self) -> Location {
+        self.move_caret_to(Location::new(0, 0)).unwrap()
+    }
+
     fn move_caret_next_word(&mut self) -> Location {
-        let mut reader = self.buffer.get_reader();
-        if reader.skip_until_blank().is_err() {
-            return self.get_cursor(); // 不改变 cursor 位置.
+        let mut reader = self.buffer.get_reader().unwrap();
+        let ok = reader.skip_until_blank().is_ok() && reader.skip_until_not_blank().is_ok();
+        if ok {
+            self.move_caret_to(reader.caret()).unwrap()
+        } else {
+            self.move_caret_to_global_end()
         }
-        if reader.skip_until_not_blank().is_err() {
-            return self.get_cursor(); // 不改变 cursor 位置.
-        }
-        self.move_caret_to(reader.caret()).unwrap()
+    }
+
+    fn move_caret_prev_word(&mut self) -> Location {
+        todo!()
     }
 
     /// 移动 caret, 会根据 display_area 协调  buffer_display_offset 以使 buffer
@@ -454,6 +473,9 @@ impl EditArea {
             CaretMove::Up => self.move_caret_up(),
             CaretMove::Down => self.move_caret_down(),
             CaretMove::NextWord => self.move_caret_next_word(),
+            CaretMove::PrevWord => self.move_caret_prev_word(),
+            CaretMove::GlobalEnd => self.move_caret_to_global_end(),
+            CaretMove::GlobalStart => self.move_caret_to_global_start(),
             _ => {
                 todo!("{:?}.", caret_move)
             }

@@ -134,6 +134,14 @@ pub struct EditArea {
 }
 
 impl EditArea {
+    /// 把 buffer 的 caret 坐标转换成 cursor 坐标.
+    fn get_cursor(&self) -> Location {
+        let caret = self.buffer.caret();
+        let offset_x = caret.x.saturating_sub(self.buffer_display_offset.x).min(self.display_area.width());
+        let offset_y = caret.y.saturating_sub(self.buffer_display_offset.y).min(self.display_area.height());
+        Location::new(offset_x, offset_y)
+    }
+
     /// 更改显示区域的大小, 在 [`EditArea::print_to`] 和 [`EditArea::print_to_center`] 之前需要调用以确保正确显示.
     pub fn configure_area(&mut self, new_area: Area) {
         self.display_area = new_area;
@@ -190,9 +198,7 @@ impl EditArea {
                 None => {}
             };
         }
-        let caret = self.buffer.caret();
-        let offset_x = caret.x.saturating_sub(self.buffer_display_offset.x).min(self.display_area.width());
-        let offset_y = caret.y.saturating_sub(self.buffer_display_offset.y).min(self.display_area.height());
+        let Location { x: offset_x, y: offset_y } = self.get_cursor();
         terminal.move_cursor_to(Location::new(self.display_area.x() + offset_x, self.display_area.y() + offset_y))?;
         terminal.show_cursor()?;
         Ok(())
@@ -298,12 +304,12 @@ impl EditArea {
             // 这里不需要行末贴边, 让用户感知到这行后面是空的.
             self.buffer_display_offset.x = right.saturating_sub(self.display_area.width());
         }
-        self.buffer_display_offset == raw_offset
+        self.buffer_display_offset != raw_offset
     }
 }
 
 impl EditArea {
-    fn move_caret_left(&mut self) -> error::Result<()> {
+    fn move_caret_left(&mut self) -> error::Result<Location> {
         let mut caret = self.buffer.caret();
         if caret.x == 0 {
             if caret.y > 0 {
@@ -324,7 +330,7 @@ impl EditArea {
         self.move_caret_to(caret)
     }
 
-    fn move_caret_right(&mut self) -> error::Result<()> {
+    fn move_caret_right(&mut self) -> error::Result<Location> {
         let mut caret = self.buffer.caret();
         let line = self.buffer.get(caret.y);
         match line {
@@ -349,7 +355,7 @@ impl EditArea {
         self.move_caret_to(caret)
     }
 
-    fn move_caret_up(&mut self) -> error::Result<()> {
+    fn move_caret_up(&mut self) -> error::Result<Location> {
         // todo 添加对非 ascii 字符宽度的字符的支持, 比如适配中文的宽度.
         let mut caret = self.buffer.caret();
         if caret.y != 0 {
@@ -366,7 +372,7 @@ impl EditArea {
         self.move_caret_to(caret)
     }
 
-    fn move_caret_down(&mut self) -> error::Result<()> {
+    fn move_caret_down(&mut self) -> error::Result<Location> {
         let mut caret = self.buffer.caret();
         let next_line = self.buffer.get(caret.y + 1);
         match next_line {
@@ -385,31 +391,37 @@ impl EditArea {
     /// # Errors
     ///
     /// - [`Error::CaretOutOfRange`]: caret 移动到的位置不合理.
-    pub fn move_caret_to(&mut self, caret: Location) -> error::Result<()> {
+    ///
+    /// # Returns
+    ///
+    /// - 移动到的 caret 在屏幕中的坐标, 也就是 cursor: [`Location`].
+    pub fn move_caret_to(&mut self, caret: Location) -> error::Result<Location> {
         // 检测 caret 移动的位置是否合理.
         self.buffer.check_caret(caret)?;
         self.buffer.seek_unchecked(caret);
-        self.update_display_offset();
-        // 由于此处没有持有 terminal 引用, 无法直接 move_cusor_to.
-        // 所以不管 self.buffer_display_offset 是否发生了变化, 都需要 set_need_printing.
-        // todo 持有 terminal 借用并移动指针, 减少画面闪烁.
-        self.set_need_printing();
-        Ok(())
+        if self.update_display_offset() {
+            self.set_need_printing();
+        }
+        // 通过返回 caret 在屏幕中的位置来通知调用者对 cursor 进行更新而无需绘制其他的内容.
+        Ok(self.get_cursor())
     }
 
     /// 对 caret 执行特定的移动操作.
     /// 具体操作见 [`CaretMove`].
-    pub fn move_caret(&mut self, caret_move: CaretMove) -> error::Result<()> {
+    ///
+    /// # Returns
+    ///
+    /// - 移动 caret 后, 屏幕 cursor 应该移动到的位置.
+    pub fn move_caret(&mut self, caret_move: CaretMove) -> Location {
         match caret_move {
-            CaretMove::Left => self.move_caret_left()?,
-            CaretMove::Right => self.move_caret_right()?,
-            CaretMove::Up => self.move_caret_up()?,
-            CaretMove::Down => self.move_caret_down()?,
+            CaretMove::Left => self.move_caret_left(),
+            CaretMove::Right => self.move_caret_right(),
+            CaretMove::Up => self.move_caret_up(),
+            CaretMove::Down => self.move_caret_down(),
             _ => {
                 todo!()
             }
-        }
-        Ok(())
+        }.unwrap() // CaretOutOfRange 在这里不会出现, 因为都是计算好了的坐标移动.
     }
 }
 // todo 解决移动光标的时候屏闪问题.

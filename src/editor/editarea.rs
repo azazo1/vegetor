@@ -1,4 +1,4 @@
-use crossterm::event::KeyCode;
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::io;
 use crate::{error, CharsCount};
 use crate::editor::buffer::Buffer;
@@ -55,20 +55,44 @@ pub enum CaretMove {
     /// # Notice
     ///
     /// `跳转` 不包括行内的 caret 移动.
-    NextJump,
+    NextTrace,
 }
 
-impl TryFrom<KeyCode> for CaretMove {
+impl TryFrom<&KeyEvent> for CaretMove {
     type Error = ();
 
-    fn try_from(value: KeyCode) -> Result<Self, Self::Error> {
-        Ok(match value {
-            KeyCode::Left => CaretMove::Left,
-            KeyCode::Right => CaretMove::Right,
-            KeyCode::Up => CaretMove::Up,
-            KeyCode::Down => CaretMove::Down,
+    fn try_from(value: &KeyEvent) -> Result<Self, Self::Error> {
+        let modifiers = value.modifiers;
+        Ok(match value.code {
+            KeyCode::Left if modifiers == KeyModifiers::NONE => CaretMove::Left,
+            KeyCode::Right if modifiers == KeyModifiers::NONE => CaretMove::Right,
+            KeyCode::Up if modifiers == KeyModifiers::NONE => CaretMove::Up,
+            KeyCode::Down if modifiers == KeyModifiers::NONE => CaretMove::Down,
+
+            KeyCode::Left if modifiers == KeyModifiers::CONTROL => CaretMove::PrevWord,
+            KeyCode::Right if modifiers == KeyModifiers::CONTROL => CaretMove::NextWord,
+
+            KeyCode::Left if modifiers == KeyModifiers::CONTROL | KeyModifiers::ALT => CaretMove::PrevTrace,
+            KeyCode::Right if modifiers == KeyModifiers::CONTROL | KeyModifiers::ALT => CaretMove::NextTrace,
+
+            KeyCode::Home if modifiers == KeyModifiers::NONE => CaretMove::StartOfLine,
+            KeyCode::End if modifiers == KeyModifiers::NONE => CaretMove::EndOfLine,
+
+            KeyCode::Home if modifiers == KeyModifiers::CONTROL => CaretMove::GlobalStart,
+            KeyCode::End if modifiers == KeyModifiers::CONTROL => CaretMove::GlobalEnd,
+
+            KeyCode::PageUp => CaretMove::PageUp,
+            KeyCode::PageDown => CaretMove::PageDown,
             _ => { Err(())? }
         })
+    }
+}
+
+impl TryFrom<KeyEvent> for CaretMove {
+    type Error = ();
+
+    fn try_from(value: KeyEvent) -> Result<Self, Self::Error> {
+        (&value).try_into()
     }
 }
 
@@ -309,7 +333,7 @@ impl EditArea {
 }
 
 impl EditArea {
-    fn move_caret_left(&mut self) -> error::Result<Location> {
+    fn move_caret_left(&mut self) -> Location {
         let mut caret = self.buffer.caret();
         if caret.x == 0 {
             if caret.y > 0 {
@@ -327,10 +351,10 @@ impl EditArea {
         } else {
             caret.x -= 1;
         }
-        self.move_caret_to(caret)
+        self.move_caret_to(caret).unwrap()
     }
 
-    fn move_caret_right(&mut self) -> error::Result<Location> {
+    fn move_caret_right(&mut self) -> Location {
         let mut caret = self.buffer.caret();
         let line = self.buffer.get(caret.y);
         match line {
@@ -352,10 +376,10 @@ impl EditArea {
                 }
             }
         }
-        self.move_caret_to(caret)
+        self.move_caret_to(caret).unwrap()
     }
 
-    fn move_caret_up(&mut self) -> error::Result<Location> {
+    fn move_caret_up(&mut self) -> Location {
         // todo 添加对非 ascii 字符宽度的字符的支持, 比如适配中文的宽度.
         let mut caret = self.buffer.caret();
         if caret.y != 0 {
@@ -369,10 +393,10 @@ impl EditArea {
             }
             // caret.y == 0 不用考虑, 因为是向上.
         }
-        self.move_caret_to(caret)
+        self.move_caret_to(caret).unwrap()
     }
 
-    fn move_caret_down(&mut self) -> error::Result<Location> {
+    fn move_caret_down(&mut self) -> Location {
         let mut caret = self.buffer.caret();
         let next_line = self.buffer.get(caret.y + 1);
         match next_line {
@@ -382,7 +406,18 @@ impl EditArea {
             }
             None => {}
         }
-        self.move_caret_to(caret)
+        self.move_caret_to(caret).unwrap()
+    }
+
+    fn move_caret_next_word(&mut self) -> Location {
+        let mut reader = self.buffer.get_reader();
+        if reader.skip_until_blank().is_err() {
+            return self.get_cursor(); // 不改变 cursor 位置.
+        }
+        if reader.skip_until_not_blank().is_err() {
+            return self.get_cursor(); // 不改变 cursor 位置.
+        }
+        self.move_caret_to(reader.caret()).unwrap()
     }
 
     /// 移动 caret, 会根据 display_area 协调  buffer_display_offset 以使 buffer
@@ -418,10 +453,11 @@ impl EditArea {
             CaretMove::Right => self.move_caret_right(),
             CaretMove::Up => self.move_caret_up(),
             CaretMove::Down => self.move_caret_down(),
+            CaretMove::NextWord => self.move_caret_next_word(),
             _ => {
-                todo!()
+                todo!("{:?}.", caret_move)
             }
-        }.unwrap() // CaretOutOfRange 在这里不会出现, 因为都是计算好了的坐标移动.
+        } // CaretOutOfRange 在这里不会出现, 因为都是计算好了的坐标移动.
     }
 }
 // todo 解决移动光标的时候屏闪问题.

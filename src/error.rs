@@ -13,6 +13,8 @@ pub enum Error {
     CaretOutOfHeight { caret: usize, height: usize },
     #[error("Caret out of text len, caret x: {caret}, current line length: {len}.")]
     CaretOutOfLen { caret: usize, len: usize },
+    #[error("End of buffer reached.")]
+    EndOfFile,
 
     // edit area.
     #[error("Buffer size {buffer_size:?} exceeds the display area size {area_size:?}.")]

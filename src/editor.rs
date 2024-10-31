@@ -158,7 +158,8 @@ impl Editor {
     fn handle_event(&mut self) -> error::Result<()> {
         let evt = self.terminal.read_event_blocking();
         match evt {
-            Ok(Event::Key(KeyEvent { code, kind, modifiers, .. })) => {
+            Ok(Event::Key(key_event)) => {
+                let KeyEvent { kind, code, modifiers, .. } = key_event;
                 if kind == KeyEventKind::Press {
                     match code {
                         KeyCode::Char('q') if modifiers == KeyModifiers::CONTROL => {
@@ -172,7 +173,7 @@ impl Editor {
                             if self.state == State::Welcoming {
                                 self.state = State::Editing; // 有按键按下就进入 Editing, 其余不做任何动作.
                                 self.edit_area.set_need_printing();
-                            } else if let Ok(caret_move) = code.try_into() {
+                            } else if let Ok(caret_move) = key_event.try_into() {
                                 self.terminal.move_cursor_to(self.edit_area.move_caret(caret_move))?;
                             }
                             // todo

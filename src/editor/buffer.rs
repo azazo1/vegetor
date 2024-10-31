@@ -12,6 +12,12 @@ pub struct Buffer {
     lines: Vec<String>,
 }
 
+/// [`Buffer`] 内容读取器, 在此读取器的生命周期时, buffer 内容不会改变.
+pub struct BufferReader<'a> {
+    caret: Location,
+    buffer: &'a Buffer,
+}
+
 impl Buffer {
     pub fn new() -> Buffer {
         Buffer {
@@ -142,6 +148,87 @@ impl Buffer {
     pub fn caret(&self) -> Location {
         self.caret
     }
+
+    /// 获取一个字符读取器, 从 caret 的位置开始读取.
+    pub fn get_reader(&self) -> BufferReader {
+        BufferReader::new(&self)
+    }
+}
+
+impl<'a> BufferReader<'a> {
+    fn new(buffer: &'a Buffer) -> BufferReader<'a> {
+        BufferReader {
+            caret: buffer.caret,
+            buffer,
+        }
+    }
+
+    pub fn caret(&self) -> Location {
+        self.caret
+    }
+
+    /// 跳过字符直到 f 返回 true.
+    ///
+    /// caret 将指在第一个让 f 返回 true 的字符,
+    /// 下一次调用[`BufferReader::next`] 将返回该字符.
+    ///
+    /// # Errors
+    ///
+    /// - [`error::Error::EndOfFile`]: 到达了 buffer 的末尾且仍没有字符使 f 返回 true, 此时 caret 的位置和调用前相同.
+    pub fn skip_until(&mut self, f: impl Fn(char) -> bool) -> error::Result<()> {
+        let origin_caret = self.caret;
+        loop {
+            let prev_caret = self.caret;
+            match self.next() {
+                Some(ch) if f(ch) => {
+                    self.caret = prev_caret;
+                    return Ok(());
+                }
+                None => {
+                    self.caret = origin_caret;
+                    return Err(error::Error::EndOfFile);
+                }
+                _ => ()
+            }
+        }
+    }
+
+    #[inline]
+    pub fn skip_until_blank(&mut self) -> error::Result<()> {
+        self.skip_until(char::is_whitespace)
+    }
+
+    #[inline]
+    pub fn skip_until_not_blank(&mut self) -> error::Result<()> {
+        self.skip_until(|c| !c.is_whitespace())
+    }
+}
+
+impl<'a> Iterator for BufferReader<'a> {
+    type Item = char;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.buffer.get(self.caret.y) {
+            Some(line) => {
+                if self.caret.x >= line.len() {
+                    self.caret.y += 1;
+                    self.caret.x = 0;
+                    // 行末补充一个换行符, 除非是文本最末尾.
+                    if self.buffer.get(self.caret.y).is_some() {
+                        Some('\n')
+                    } else {
+                        None
+                    }
+                } else {
+                    let line = &line[self.caret.x..];
+                    let ch = line.chars().next().unwrap();
+                    self.caret.x += ch.len_utf8();
+                    Some(ch)
+                }
+            }
+            None => None,
+        }
+    }
 }
 
 impl fmt::Write for Buffer {
@@ -200,5 +287,25 @@ mod test {
         let string = fs::read_to_string("Cargo.lock").unwrap();
         buffer.write_str(&string).unwrap();
         print!("{}", buffer);
+    }
+
+    #[test]
+    fn buffer_reader() {
+        let mut buffer = Buffer::new();
+        buffer.load("example-horizontal.txt").unwrap();
+        buffer.seek_unchecked(Location::new(0, 0));
+        let mut reader = buffer.get_reader();
+        let mut string = String::new();
+        loop {
+            match reader.next() {
+                Some(ch) => {
+                    write!(string, "{}", ch).unwrap();
+                }
+                None => {
+                    break;
+                }
+            }
+        }
+        assert_eq!(string, format!("{}", buffer));
     }
 }

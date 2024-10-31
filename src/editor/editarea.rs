@@ -513,3 +513,6 @@ impl EditArea {
         } // CaretOutOfRange 在这里不会出现, 因为都是计算好了的坐标移动.
     }
 }
+
+
+// todo 解决调整终端大小的时候 cursor 显示在右下角的问题.

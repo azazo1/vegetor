@@ -172,6 +172,39 @@ impl Buffer {
         self.check_self_caret()?;
         Ok(BufferReader::new(&self))
     }
+
+    /// 删除 buffer 中 caret 指向的字符的前一个字符.
+    ///
+    /// # Returns
+    ///
+    /// - Ok(char): 被删除的字符.
+    /// - Err(e):
+    ///     - [`error::Error::CaretOutOfHeight`]
+    ///     - [`error::Error::CaretOutOfLen`]
+    ///     - [`error::Error::DelAtBeginning`]
+    ///
+    /// buffer 为空时报前两个错误中的一个.
+    pub fn del_char(&mut self) -> error::Result<char> {
+        self.check_self_caret()?;
+        if self.caret.x == 0 {
+            if self.caret.y != 0 {
+                let line = self.lines.remove(self.caret.y);
+                let len_to_end = line.len();
+                let prev_line = self.get_mut(self.caret.y - 1).unwrap();
+                prev_line.push_str(&line);
+                self.caret.x = prev_line.len() - len_to_end;
+                self.caret.y -= 1;
+                Ok('\n')
+            } else {
+                Err(error::Error::DelAtBeginning)
+            }
+        } else {
+            self.caret.x -= 1;
+            let x = self.caret.x;
+            let line = self.get_current_line_mut().unwrap();
+            Ok(line.remove(x))
+        }
+    }
 }
 
 impl<'a> BufferReader<'a> {
@@ -437,5 +470,19 @@ mod tests {
         }
         let string: String = string.chars().rev().collect();
         assert_eq!(string, format!("{}", buffer));
+    }
+
+    #[test]
+    fn del_char() {
+        let mut buffer = Buffer::new();
+        write!(buffer, "a\nb\nc").unwrap();
+        buffer.seek_unchecked(Location::new(0, 2));
+        for _ in 0..2 {
+            buffer.del_char().unwrap();
+        }
+        assert_eq!(
+            "a\nc",
+            format!("{}", buffer)
+        );
     }
 }

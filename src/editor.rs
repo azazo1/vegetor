@@ -189,6 +189,9 @@ impl Editor {
                                     KeyCode::Tab if modifiers == KeyModifiers::NONE => {
                                         write!(self.edit_area, "{}", " ".repeat(TAB_WIDTH)).unwrap();
                                     }
+                                    KeyCode::Backspace if modifiers == KeyModifiers::NONE => {
+                                        let _ = self.edit_area.del_char();
+                                    }
                                     _ => {}
                                 }
                             }

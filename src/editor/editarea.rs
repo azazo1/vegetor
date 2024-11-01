@@ -488,7 +488,8 @@ impl EditArea {
     ///
     /// # Errors
     ///
-    /// - [`Error::CaretOutOfRange`]: caret 移动到的位置不合理.
+    /// - [`error::Error::CaretOutOfLen`]
+    /// - [`error::Error::CaretOutOfHeight`]
     ///
     /// # Returns
     ///
@@ -528,6 +529,15 @@ impl EditArea {
                 todo!("{:?}.", caret_move)
             }
         } // CaretOutOfRange 在这里不会出现, 因为都是计算好了的坐标移动.
+    }
+}
+
+impl EditArea {
+    pub fn del_char(&mut self) -> error::Result<char> {
+        let rst = self.buffer.del_char();
+        self.set_need_printing();
+        self.update_display_offset();
+        rst
     }
 }
 

@@ -15,12 +15,12 @@ pub enum Error {
     CaretOutOfLen { caret: usize, len: usize },
     #[error("End of buffer reached.")]
     EndOfFile,
+    #[error("Deleting char at the very beginning of the buffer.")]
+    DelAtBeginning,
 
     // edit area.
     #[error("Buffer size {buffer_size:?} exceeds the display area size {area_size:?}.")]
     BufferSizeExceeds { buffer_size: Size, area_size: Size },
-    #[error("Caret out of range.")]
-    CaretOutOfRange,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

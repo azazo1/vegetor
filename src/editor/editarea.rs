@@ -1,3 +1,4 @@
+use std::fmt;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::io;
 use crate::{error, CharsCount};
@@ -527,6 +528,16 @@ impl EditArea {
                 todo!("{:?}.", caret_move)
             }
         } // CaretOutOfRange 在这里不会出现, 因为都是计算好了的坐标移动.
+    }
+}
+
+impl fmt::Write for EditArea {
+    /// 在当前的 buffer caret 位置插入字符串.
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        let rst = self.buffer.write_str(s);
+        self.set_need_printing();
+        self.update_display_offset();
+        rst
     }
 }
 

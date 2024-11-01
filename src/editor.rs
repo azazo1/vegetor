@@ -13,13 +13,15 @@ mod editarea;
 mod terminal;
 mod buffer;
 
+/// tab 键插入的空格数量.
+const TAB_WIDTH: usize = 4;
+
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
 pub enum State {
     Welcoming,
     Editing,
     Exiting,
 }
-
 
 #[derive(Debug)]
 pub enum BufferLoadConfig<'a> {
@@ -88,7 +90,8 @@ impl Editor {
         terminal.initialize()?;
         let terminal_size = terminal.size()?;
         let mut edit_area = EditArea::new();
-        edit_area.configure_area(Area::new(0, 0, terminal_size.width, terminal_size.height)); // todo 改.
+        // 发现如果直接传入 terminal_size.width 和 terminal_size.height 的话, caret 会莫名奇妙保留到终端最右下角.
+        edit_area.configure_area(Area::new(0, 0, terminal_size.width - 1, terminal_size.height)); // todo 改.
 
         let mut editor = Editor {
             edit_area,
@@ -143,7 +146,7 @@ impl Editor {
                         })?;
                     }
                     State::Editing => {
-                        self.edit_area.print_to(&mut self.terminal)?
+                        self.edit_area.print_to(&mut self.terminal)?;
                     }
                     _ => {}
                 }
@@ -175,8 +178,20 @@ impl Editor {
                                 self.edit_area.set_need_printing();
                             } else if let Ok(caret_move) = key_event.try_into() {
                                 self.terminal.move_cursor_to(self.edit_area.move_caret(caret_move))?;
+                            } else {
+                                match code {
+                                    KeyCode::Char(ch) if modifiers == KeyModifiers::NONE => {
+                                        write!(self.edit_area, "{ch}").unwrap();
+                                    }
+                                    KeyCode::Enter if modifiers == KeyModifiers::NONE => {
+                                        write!(self.edit_area, "\n").unwrap();
+                                    }
+                                    KeyCode::Tab if modifiers == KeyModifiers::NONE => {
+                                        write!(self.edit_area, "{}", " ".repeat(TAB_WIDTH)).unwrap();
+                                    }
+                                    _ => {}
+                                }
                             }
-                            // todo
                         }
                     }
                 }
@@ -184,7 +199,7 @@ impl Editor {
             Ok(Event::Resize(columns, rows)) => {
                 let columns = columns as usize;
                 let rows = rows as usize;
-                self.edit_area.configure_area(Area::new(0, 0, columns, rows));
+                self.edit_area.configure_area(Area::new(0, 0, columns - 1, rows));
                 self.edit_area.update_display_offset();
             }
             _ => {}
@@ -230,3 +245,5 @@ mod tests {
         editor.run().unwrap();
     }
 }
+
+// todo 保存文件功能.

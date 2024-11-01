@@ -49,6 +49,7 @@ pub enum CaretMove {
     /// # Notice
     ///
     /// `跳转` 不包括行内的 caret 移动.
+    /// todo 实现 (但暂时不会).
     PrevTrace,
     /// caret 移动到跳转后的位置.
     ///
@@ -170,7 +171,6 @@ impl EditArea {
     pub fn configure_area(&mut self, new_area: Area) {
         self.display_area = new_area;
         self.set_need_printing();
-        // todo 管理 buffer_display_offset.
     }
 
     /// 用于标识已经完成显示的步骤, 只由外部调用.
@@ -468,6 +468,20 @@ impl EditArea {
         self.move_caret_to(caret).unwrap()
     }
 
+    fn move_caret_page_up(&mut self) -> Location {
+        let mut caret = self.buffer.caret();
+        caret.y = caret.y.saturating_sub(self.display_area.height());
+        caret.x = 0;
+        self.move_caret_to(caret).unwrap()
+    }
+
+    fn move_caret_page_down(&mut self) -> Location {
+        let mut caret = self.buffer.caret();
+        caret.x = 0;
+        caret.y = (caret.y + self.display_area.height()).min(self.buffer.lines_num() - 1);
+        self.move_caret_to(caret).unwrap()
+    }
+
     /// 移动 caret, 会根据 display_area 协调  buffer_display_offset 以使 buffer
     /// 的显示内容随 caret 移动而变化.
     ///
@@ -507,6 +521,8 @@ impl EditArea {
             CaretMove::GlobalStart => self.move_caret_to_global_start(),
             CaretMove::LineEnd => self.move_caret_to_line_end(),
             CaretMove::LineStart => self.move_caret_to_line_start(),
+            CaretMove::PageUp => self.move_caret_page_up(),
+            CaretMove::PageDown => self.move_caret_page_down(),
             _ => {
                 todo!("{:?}.", caret_move)
             }

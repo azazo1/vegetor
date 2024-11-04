@@ -8,13 +8,24 @@ use crate::editor::editarea::{Area, EditArea};
 use crate::editor::terminal::Terminal;
 use crate::error;
 use crate::CARGO_PKG_NAME;
+use crate::editor::statusbar::{Packing, StatusBar};
 
 mod editarea;
 mod terminal;
 mod buffer;
+mod statusbar;
 
 /// tab 键插入的空格数量.
 const TAB_WIDTH: usize = 4;
+
+trait Printable {
+    /// 此对象是否需要重绘.
+    fn need_printing(&self) -> bool;
+    /// 设置为需要重绘.
+    fn set_need_printing(&mut self);
+    /// 设置为不需要重绘.
+    fn unset_need_printing(&mut self);
+}
 
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
 pub enum State {
@@ -64,7 +75,7 @@ pub struct EditorBuildConfig<'a> {
 
 pub struct Editor {
     edit_area: EditArea,
-    // status_bar: StatusBar,
+    status_bar: StatusBar,
     terminal: Terminal,
     state: State,
 }
@@ -88,14 +99,15 @@ impl Editor {
 
         let mut terminal = Terminal::new();
         terminal.initialize()?;
-        let terminal_size = terminal.size()?;
         let mut edit_area = EditArea::new();
-        // 发现如果直接传入 terminal_size.width 和 terminal_size.height 的话, caret 会莫名奇妙保留到终端最右下角.
-        edit_area.configure_area(Area::new(0, 0, terminal_size.width - 1, terminal_size.height)); // todo 改.
+
+        let mut status_bar = StatusBar::new();
+        status_bar.set_content("Hello World".into());
+        status_bar.set_packing(Packing::Left(statusbar::HORIZONTAL_PADDING, statusbar::HORIZONTAL_PADDING));
 
         let mut editor = Editor {
             edit_area,
-            // status_bar: StatusBar::new(&terminal),
+            status_bar,
             terminal,
             state: State::Welcoming,
         };
@@ -125,8 +137,8 @@ impl Editor {
                 buffer.load(path)?;
             }
         }
-        editor.edit_area.update_display_offset();
-        // editor.edit_area.set_need_printing();
+
+        editor.update_area_configuration()?;
 
         Ok(editor)
     }
@@ -146,11 +158,13 @@ impl Editor {
                         })?;
                     }
                     State::Editing => {
+                        self.status_bar.print_to(&mut self.terminal)?; // 先打印, 因为其无法回归 cursor 位置.
                         self.edit_area.print_to(&mut self.terminal)?;
                     }
                     _ => {}
                 }
                 self.edit_area.unset_need_printing();
+                self.status_bar.unset_need_printing();
             }
             self.terminal.flush()?;
             self.handle_event()?;
@@ -183,6 +197,11 @@ impl Editor {
                                     KeyCode::Char(ch) if modifiers == KeyModifiers::NONE => {
                                         write!(self.edit_area, "{ch}").unwrap();
                                     }
+                                    KeyCode::Char('s') if modifiers == KeyModifiers::CONTROL => {
+                                        // todo 当启动时指定文件名了, 那就保存到指定的文件.
+                                        // todo 判断是否有编辑痕迹, 如果有编辑痕迹.
+                                        // todo 如果启动时没有启动参数指定文件名, 那么使用 control s 保存的时候先询问文件名.
+                                    }
                                     KeyCode::Enter if modifiers == KeyModifiers::NONE => {
                                         write!(self.edit_area, "\n").unwrap();
                                     }
@@ -199,11 +218,8 @@ impl Editor {
                     }
                 }
             }
-            Ok(Event::Resize(columns, rows)) => {
-                let columns = columns as usize;
-                let rows = rows as usize;
-                self.edit_area.configure_area(Area::new(0, 0, columns - 1, rows));
-                self.edit_area.update_display_offset();
+            Ok(Event::Resize(_, _)) => {
+                self.update_area_configuration()?;
             }
             _ => {}
         }
@@ -213,6 +229,15 @@ impl Editor {
     /// 检查子元素中是否有需要重新绘制的.
     fn check_need_printing(&self) -> bool {
         self.edit_area.need_printing()
+            || self.status_bar.need_printing()
+    }
+
+    fn update_area_configuration(&mut self) -> error::Result<()> {
+        let (width, height): (usize, usize) = self.terminal.size()?.into();
+        // 发现如果直接传入 terminal_size.width 和 terminal_size.height 的话, caret 会莫名奇妙保留到终端最右下角.
+        self.edit_area.configure_area(Area::new(0, 0, width - 1, height - 1));
+        self.status_bar.configure_area(Area::new(0, height - 1, width - 1, 1));
+        Ok(())
     }
 }
 
@@ -250,3 +275,4 @@ mod tests {
 }
 
 // todo 保存文件功能.
+// todo `撤销`功能.

@@ -3,6 +3,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::io;
 use crate::{error, CharsCount};
 use crate::editor::buffer::Buffer;
+use crate::editor::Printable;
 use crate::editor::terminal::{Location, Size, Terminal};
 
 /// caret 上下移动时, 显示区域发生滚动会尽可能不会让 caret 直接贴住可显示范围的边缘, 而是保留一定的可视行数预览后/前几行.
@@ -159,6 +160,20 @@ pub struct EditArea {
     need_printing: bool,
 }
 
+impl Printable for EditArea {
+    fn need_printing(&self) -> bool {
+        self.need_printing
+    }
+
+    fn set_need_printing(&mut self) {
+        self.need_printing = true;
+    }
+
+    fn unset_need_printing(&mut self) {
+        self.need_printing = false;
+    }
+}
+
 impl EditArea {
     /// 把 buffer 的 caret 坐标转换成 cursor 坐标.
     fn get_cursor(&self) -> Location {
@@ -171,22 +186,10 @@ impl EditArea {
     /// 更改显示区域的大小, 在 [`EditArea::print_to`] 和 [`EditArea::print_to_center`] 之前需要调用以确保正确显示.
     pub fn configure_area(&mut self, new_area: Area) {
         self.display_area = new_area;
+        self.update_display_offset();
         self.set_need_printing();
     }
 
-    /// 用于标识已经完成显示的步骤, 只由外部调用.
-    pub fn unset_need_printing(&mut self) {
-        self.need_printing = false;
-    }
-
-    pub fn need_printing(&self) -> bool {
-        self.need_printing
-    }
-
-    /// 标记自身需要重绘, 可由内部调用也可由外部调用.
-    pub fn set_need_printing(&mut self) {
-        self.need_printing = true;
-    }
 
     /// 把 buffer 内容打印到终端.
     ///
@@ -550,6 +553,3 @@ impl fmt::Write for EditArea {
         rst
     }
 }
-
-
-// todo 解决调整终端大小的时候 cursor 显示在右下角的问题.
